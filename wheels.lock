@@ -1,0 +1,87 @@
+{
+ "note": "Wheels for xltw-solver, from https://pypi.org/pypi/<name>/<version>/json; sha256 as PyPI publishes it. Written by lock.py --resolve.",
+ "pins": [
+  {
+   "name": "pyvrp",
+   "version": "0.14.1"
+  },
+  {
+   "name": "numpy",
+   "version": "2.3.4"
+  },
+  {
+   "name": "vrplib",
+   "version": "2.2.0"
+  },
+  {
+   "name": "tqdm",
+   "version": "4.67.1"
+  }
+ ],
+ "wheels": [
+  {
+   "name": "pyvrp",
+   "version": "0.14.1",
+   "tag": "cp311",
+   "filename": "pyvrp-0.14.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+   "sha256": "33a5c13ba25ddaaf64b8ff75066d1405eeac3515fabf971bd156bb8c6f7de7cf",
+   "url": "https://files.pythonhosted.org/packages/31/85/94a37975e58921a5ba0069c6dd93950990b36656ea1326ca88f3ebce7c6e/pyvrp-0.14.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+  },
+  {
+   "name": "pyvrp",
+   "version": "0.14.1",
+   "tag": "cp312",
+   "filename": "pyvrp-0.14.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+   "sha256": "f533035aeb125cd06ff64f4c875210078d44716d8352bd398351be4feb9761c4",
+   "url": "https://files.pythonhosted.org/packages/3e/d3/da1ff5fb3fa9dca4b17700a30b959737281ed5d2e6b03bd5ea2c1d86cb8a/pyvrp-0.14.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+  },
+  {
+   "name": "pyvrp",
+   "version": "0.14.1",
+   "tag": "cp313",
+   "filename": "pyvrp-0.14.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+   "sha256": "ab92b19550bb330cde302109b195ea9f411e82692e41fc3dca5c5af9138f18fe",
+   "url": "https://files.pythonhosted.org/packages/d2/af/61b6847651c36bcd1f2d4ddf32587dfb935f4abc4bd5463b03c076db5de2/pyvrp-0.14.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+  },
+  {
+   "name": "numpy",
+   "version": "2.3.4",
+   "tag": "cp311",
+   "filename": "numpy-2.3.4-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+   "sha256": "a7b2f9a18b5ff9824a6af80de4f37f4ec3c2aab05ef08f51c77a093f5b89adda",
+   "url": "https://files.pythonhosted.org/packages/bb/32/67e3b0f07b0aba57a078c4ab777a9e8e6bc62f24fb53a2337f75f9691699/numpy-2.3.4-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+  },
+  {
+   "name": "numpy",
+   "version": "2.3.4",
+   "tag": "cp312",
+   "filename": "numpy-2.3.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+   "sha256": "4121c5beb58a7f9e6dfdee612cb24f4df5cd4db6e8261d7f4d7450a997a65d6a",
+   "url": "https://files.pythonhosted.org/packages/f9/58/30a85127bfee6f108282107caf8e06a1f0cc997cb6b52cdee699276fcce4/numpy-2.3.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+  },
+  {
+   "name": "numpy",
+   "version": "2.3.4",
+   "tag": "cp313",
+   "filename": "numpy-2.3.4-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+   "sha256": "fc8a63918b04b8571789688b2780ab2b4a33ab44bfe8ccea36d3eba51228c953",
+   "url": "https://files.pythonhosted.org/packages/9e/7e/7d306ff7cb143e6d975cfa7eb98a93e73495c4deabb7d1b5ecf09ea0fd69/numpy-2.3.4-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+  },
+  {
+   "name": "vrplib",
+   "version": "2.2.0",
+   "tag": "any",
+   "filename": "vrplib-2.2.0-py3-none-any.whl",
+   "sha256": "5bed28c4ff8cfaf99da7af3081e5627bc4108f0056abc25be0285d0a8b9ad104",
+   "url": "https://files.pythonhosted.org/packages/26/0d/377dd5a682ff62bb043ec08a8f70941d6e43ff71d4727942a34ab939f531/vrplib-2.2.0-py3-none-any.whl"
+  },
+  {
+   "name": "tqdm",
+   "version": "4.67.1",
+   "tag": "any",
+   "filename": "tqdm-4.67.1-py3-none-any.whl",
+   "sha256": "26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2",
+   "url": "https://files.pythonhosted.org/packages/d0/30/dc54f88dd4a2b5dc8a0279bdd7270e735851848b762aeb1c1184ed1f6b14/tqdm-4.67.1-py3-none-any.whl"
+  }
+ ]
+}

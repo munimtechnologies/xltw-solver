@@ -1,0 +1,5 @@
+lib/
+solver
+vendor/
+__pycache__/
+*.pyc
