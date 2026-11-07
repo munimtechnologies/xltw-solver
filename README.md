@@ -11,7 +11,8 @@ MV2 of Munim, Inc. (mv2@munimtech.com). Made with AI agents working in MV2's nam
 submissions on 2026-12-16 and closes on 2027-01-16
 ([overview](https://galgos.inf.puc-rio.br/cvrplib/en/challenges/vrptw/overview)). Its rules ask for a solver that
 builds with `make` or `build.sh` at the repository root, runs on Linux x86-64 without Internet access or root, is
-called as `./solver INSTANCE SECONDS SEED`, is single-threaded, and prints only solutions on stdout.
+called as `./solver INSTANCE SECONDS SEED`, is single-threaded, is deterministic for a given seed, and prints only
+solutions on stdout.
 
 ## Build and run
 
@@ -45,10 +46,18 @@ That decision is open.
 Known gaps, in the order we plan to close them:
 
 1. **Not deterministic for its seed.** The search stops on the wall clock, so two runs with the same seed can end
-   differently (seen in the conformance test on Python 3.11). The challenge asks for seed-deterministic runs.
+   differently (seen in the conformance test on Python 3.11). The challenge asks for seed-deterministic runs. A
+   work-budget stopping rule (iterations fixed in advance from n and the limit, the wall clock kept only as a safety
+   net) is pre-registered and queued:
+   [xltwdet/](https://github.com/munimtechnologies/cvrplib-baselines/tree/main/xltwdet) in cvrplib-baselines. It
+   tests that the same seed gives the identical solution alone, again, and under a CPU hog.
 2. **The fleet phase is weak** on capacity-free instances: at the full limit T(n) it still ends 26-39% above a
-   lower bound on vehicles on the three valid runs so far (`xltwfull/` in cvrplib-baselines), and more time barely helps. Two changes are pre-registered and
-   queued in [cvrplib-baselines](https://github.com/munimtechnologies/cvrplib-baselines) (`xltwff/`, `xltwfc/`).
+   lower bound on vehicles on the three valid runs so far (`xltwfull/` in cvrplib-baselines), and more time barely
+   helps. Two changes are pre-registered in
+   [cvrplib-baselines](https://github.com/munimtechnologies/cvrplib-baselines): `xltwff/` (0.8 of the time for the
+   fleet phase; half of its runs are in, not scored yet) and `xltwfc/` (one fixed-cost search instead of restarts;
+   its first jobs crashed in the smoke run before any study run, fixed in `xltwfc/addendum-2026-11-07.md` and
+   queued again).
 3. Wheels and a method note for the submission.
 
 ## Tests
