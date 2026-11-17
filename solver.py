@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""xltw-solver 0.1.0: a vehicles-first PyVRP solver packaged for CVRPLib's VRPTW Challenge (algorithm track).
+"""xltw-solver 0.2.0: a vehicles-first PyVRP solver packaged for CVRPLib's VRPTW Challenge (algorithm track).
 
 MV2 of Munim, Inc. (mv2@munimtech.com). Made with AI agents working in MV2's name. Apache-2.0.
 Uses PyVRP 0.14.1 (MIT) for the search. The method is the `xltwrun/solver.py` baseline of
-munimtechnologies/cvrplib-baselines (commit ba1eec8), unchanged; this file only adds what an offline,
-protocol-exact package needs:
+munimtechnologies/cvrplib-baselines (commit ba1eec8); this file adds what an offline, protocol-exact package needs:
 
 - It finds its own code and its unpacked dependencies (`lib/`, made by build.sh) without pip, a venv or a network.
 - Its stdout carries solutions only. At start it keeps a private copy of file descriptor 1 for solutions and points
@@ -19,16 +18,36 @@ Usage (as the challenge runs algorithms): ./solver INSTANCE SECONDS SEED
   integer per arc, floor(d + 0.5), as the challenge's rules say.
 - Fleet lower bound K = max(Martello-Toth L2, time-window clique) from `xltwlb.py`, given at most 10% of the limit;
   if that is not enough, the capacity bound ceil(total demand / capacity) is used instead.
-- Fleet phase, half of the time left: PyVRP's minimise_fleet loop (one vehicle fewer, solve to the first feasible
-  solution, shrink to the routes used, repeat), stopped at K.
-- Distance phase, the rest: PyVRP's `solve` with that fleet, started from the fleet phase's solution.
+- Fleet phase: PyVRP's minimise_fleet loop (one vehicle fewer, solve to the first feasible solution, shrink to the
+  routes used, repeat), stopped at K.
+- Distance phase: PyVRP's `solve` with that fleet, started from the fleet phase's solution.
 - Every better solution (fewer routes first, then shorter) is printed in CVRPLib format, at most once per
   max(1 s, 1% of the limit); the best one is always printed before the solver stops. Nothing else goes to stdout.
-- The solver stops by itself shortly before the limit (1.5 s + 0.2% of the limit, at most 30 s early); the
-  watchdog's hard deadline is half that margin before the limit, and SIGTERM ends the process at once.
+- The watchdog's hard deadline is half the margin (1.5 s + 0.2% of the limit, at most 30 s) before the limit, and
+  SIGTERM ends the process at once.
 
-Single-threaded: PyVRP's search runs on one thread, and BLAS thread pools are pinned to one thread. Runs are
-seeded, but they stop on the wall clock, so two runs with the same seed can end at different solutions.
+0.2.0 (2026-11-17): deterministic for its seed by default. The challenge's rules say "Each execution must be
+deterministic for a given seed". 0.1.0 stopped both phases on the wall clock, so the same seed could end at different
+solutions on a faster, slower or busier machine. 0.2.0 stops each phase on a number of PyVRP iterations fixed in
+advance from the only two inputs that are the same on every machine, the number of customers n and the limit T
+(XLTW_MODE=work, the default):
+
+    usable           = T - margin(T)
+    fleet budget     = floor(RF0 x g(n) x FLEET_FRAC x usable)          g(n) = (n / 1000) ** -0.5
+    distance budget  = floor(RD0 x g(n) x (1 - FLEET_FRAC) x usable)  + floor(unused fleet iterations x RD0 / RF0)
+
+RF0 = 90 and RD0 = 200 iterations per second at n = 1,000 are deliberately low: in `xltwdet/` (cvrplib-baselines,
+2026-11-07) the fleet phase ran at 125-350 it/s and the distance phase at 297-500 it/s at n = 1,047-1,233 alone, and
+at 116 and 250 it/s under a CPU hog; scaled by g(n), the slowest were 129 (fleet) and 278 (distance). One rate for
+both phases (det2 there) left too little room on the slow fleet phase of n1234; separate rates fix that. The wall
+clock stays only as a safety net: if a phase reaches the usual stopping point first, it stops there, and the stats
+line says so (`clock_stop`), because from then on the run is no longer deterministic.
+FLEET_FRAC is 0.8 (was 0.5): in `xltwff/` 0.8 of the limit for the fleet phase saved one vehicle of 166 on three
+capacity-free instances, and cost at most 0.33% distance where the counts were equal.
+XLTW_MODE=clock restores 0.1.0's wall-clock stopping (with FLEET_FRAC 0.8), e.g. for runs without a time limit
+protocol where determinism does not matter.
+
+Single-threaded: PyVRP's search runs on one thread, and BLAS thread pools are pinned to one thread.
 """
 import os
 import sys
@@ -49,10 +68,14 @@ import threading  # noqa: E402
 import time  # noqa: E402
 
 START = time.monotonic()
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 CONV = "round"
 BOUND_FRAC = float(os.environ.get("XLTW_BOUND_FRAC", "0.10"))
-FLEET_FRAC = 0.5
+FLEET_FRAC = 0.8
+RF0 = 90.0     # fleet-phase iterations per second at n = 1,000 (a low estimate)
+RD0 = 200.0    # distance-phase iterations per second at n = 1,000 (a low estimate)
+RATE_EXP = 0.5
+MODES = ("work", "clock")
 TERM = {"flag": False}
 OUT = None  # the real stdout once claim_stdout() has run
 B = None    # xltwbase, loaded by load_helpers()
@@ -85,6 +108,34 @@ def margin(limit):
     return min(1.5 + 0.002 * limit, 30.0)
 
 
+def mode_from_env(env=None):
+    env = os.environ if env is None else env
+    m = env.get("XLTW_MODE", "") or "work"
+    if m not in MODES:
+        raise ValueError("XLTW_MODE must be one of %s" % ", ".join(MODES))
+    return m
+
+
+def size_factor(n):
+    """g(n) = (n / 1000) ** -RATE_EXP: PyVRP's iterations per second fall roughly with the square root of n."""
+    return (max(int(n), 1) / 1000.0) ** (-RATE_EXP)
+
+
+def phase_budgets(n, limit):
+    """(fleet, distance) iteration budgets for n customers and limit `limit` seconds. Depends on n and the limit
+    only, never on the machine."""
+    usable = max(float(limit) - margin(float(limit)), 0.0)
+    g = size_factor(n)
+    fleet = int(math.floor(RF0 * g * FLEET_FRAC * usable))
+    dist = int(math.floor(RD0 * g * (1.0 - FLEET_FRAC) * usable))
+    return fleet, dist
+
+
+def carry(fleet_left):
+    """Distance iterations bought by fleet iterations the fleet phase did not use."""
+    return int(math.floor(max(int(fleet_left), 0) * RD0 / RF0))
+
+
 def log(msg):
     sys.stderr.write("[%8.1fs] %s\n" % (time.monotonic() - START, msg))
     sys.stderr.flush()
@@ -102,6 +153,31 @@ class Until:
 
     def __call__(self, best_cost):  # noqa: ARG002
         return TERM["flag"] or time.monotonic() >= self.deadline
+
+
+class Budget:
+    """PyVRP stopping criterion that counts iterations: stops when `left` reaches 0 (deterministic), and as a
+    safety net at the wall-clock `deadline` or on SIGTERM (then `clock_stop` / `term_stop` is set)."""
+
+    def __init__(self, left, deadline, clock=time.monotonic):
+        self.left, self.used, self.deadline, self.clock = int(left), 0, deadline, clock
+        self.clock_stop = self.term_stop = False
+
+    def __call__(self, best_cost):  # noqa: ARG002
+        if TERM["flag"]:
+            self.term_stop = True
+            return True
+        if self.clock() >= self.deadline:
+            self.clock_stop = True
+            return True
+        if self.left <= 0:
+            return True
+        self.left -= 1
+        self.used += 1
+        return False
+
+    def exhausted(self):
+        return self.left <= 0 or self.clock_stop or self.term_stop
 
 
 class _Timeout(BaseException):
@@ -259,12 +335,13 @@ def read_data(inst):
         os.remove(path)
 
 
-def run(path, limit, seed, out=None, watch=True):
+def run(path, limit, seed, out=None, watch=True, mode=None):
     """Solve one instance under the protocol. Returns the stats dict (also logged to stderr)."""
     load_helpers()
     from pyvrp import IteratedLocalSearchCallbacks, IteratedLocalSearchParams, Solution, SolveParams, solve
     from pyvrp.stop import FirstFeasible, MultipleCriteria
 
+    mode = mode or mode_from_env()
     deadline = START + limit - margin(limit)
     seed = int(seed) % (2 ** 31)
     with open(path, encoding="utf-8") as f:
@@ -276,20 +353,34 @@ def run(path, limit, seed, out=None, watch=True):
     b = bound(inst, BOUND_FRAC * limit)
     log("bound %s" % json.dumps(b))
     data = read_data(inst)
+    fleet_budget, dist_budget = phase_budgets(n, limit)
     stats = {"solver": "xltw-solver " + VERSION, "instance": inst["name"], "customers": n, "limit": limit,
-             "seed": seed, "bound": b, "fleet_solves": 0, "iterations": 0}
+             "seed": seed, "mode": mode, "bound": b, "fleet_frac": FLEET_FRAC, "fleet_solves": 0,
+             "fleet_iterations": 0, "iterations": 0, "clock_stop": False, "term_stop": False}
+    if mode == "work":
+        g = size_factor(n)
+        stats.update({"fleet_budget": fleet_budget, "distance_budget": dist_budget,
+                      "model_fleet_rate": round(RF0 * g, 2), "model_distance_rate": round(RD0 * g, 2)})
+        log("work budgets: fleet %d, distance %d iterations" % (fleet_budget, dist_budget))
 
     # Fleet phase: minimise_fleet's loop, stopped at K. `cur` always holds the data with the last feasible fleet,
     # so at most two copies of the matrices exist at a time.
     t_fleet = time.monotonic()
-    fleet_deadline = t_fleet + FLEET_FRAC * max(deadline - t_fleet, 0.0)
+    stats["pre_seconds"] = round(t_fleet - START, 2)
+    if mode == "work":
+        fstop = Budget(fleet_budget, deadline)
+        fleet_open = lambda: not fstop.exhausted()  # noqa: E731
+    else:
+        fleet_deadline = t_fleet + FLEET_FRAC * max(deadline - t_fleet, 0.0)
+        fstop = Until(fleet_deadline)
+        fleet_open = lambda: time.monotonic() < fleet_deadline  # noqa: E731
     cur, feas, best = data, data.vehicle_type(0), None
     del data
-    while feas.num_available > b["k"] and not TERM["flag"] and time.monotonic() < fleet_deadline:
+    while feas.num_available > b["k"] and not TERM["flag"] and fleet_open():
         fleet = feas.replace(num_available=feas.num_available - 1)
         trial = cur.replace(vehicle_types=[fleet])
-        res = solve(trial, stop=MultipleCriteria([FirstFeasible(), Until(fleet_deadline)]), seed=seed,
-                    collect_stats=False, display=False)
+        res = solve(trial, stop=MultipleCriteria([fstop, FirstFeasible()]), seed=seed, collect_stats=False,
+                    display=False)
         stats["fleet_solves"] += 1
         if not res.best.is_feasible():
             del trial
@@ -298,8 +389,16 @@ def run(path, limit, seed, out=None, watch=True):
         pr.offer(best)
         feas = fleet.replace(num_available=min(fleet.num_available, best.num_routes()))
         cur = trial
+    if mode == "work":
+        stats["fleet_iterations"] = fstop.used
+        stats["carry"] = carry(fleet_budget - fstop.used)
+        dstop = Budget(dist_budget + stats["carry"], deadline)
+        dist_open = lambda: not dstop.exhausted()  # noqa: E731
+    else:
+        dstop = Until(deadline)
+        dist_open = lambda: time.monotonic() < deadline  # noqa: E731
     if best is None and not TERM["flag"]:  # already at K, or the first attempt failed: one solve, full fleet
-        res = solve(cur, stop=MultipleCriteria([FirstFeasible(), Until(deadline)]), seed=seed, collect_stats=False,
+        res = solve(cur, stop=MultipleCriteria([dstop, FirstFeasible()]), seed=seed, collect_stats=False,
                     display=False)
         stats["fleet_solves"] += 1
         if res.best.is_feasible():
@@ -307,11 +406,12 @@ def run(path, limit, seed, out=None, watch=True):
             pr.offer(best)
             feas = feas.replace(num_available=best.num_routes())
     pr.flush(True)
-    stats["fleet_seconds"] = round(time.monotonic() - t_fleet, 1)
+    t_dist = time.monotonic()
+    stats["fleet_seconds"] = round(t_dist - t_fleet, 1)
     stats["fleet_vehicles"] = None if best is None else int(best.num_routes())
 
     # Distance phase: solve with the fleet found, from the fleet phase's solution.
-    if best is not None and not TERM["flag"] and time.monotonic() < deadline:
+    if best is not None and not TERM["flag"] and dist_open():
         routes0 = [[c - 1 for c in r] for r in solution_routes(best)]
         d2 = cur.replace(vehicle_types=[feas])
         del cur
@@ -321,11 +421,19 @@ def run(path, limit, seed, out=None, watch=True):
                 pr.offer(sol)
 
         params = SolveParams(ils=IteratedLocalSearchParams(callbacks=OnBest()))
-        res = solve(d2, stop=Until(deadline), seed=seed, collect_stats=False, display=False, params=params,
+        res = solve(d2, stop=dstop, seed=seed, collect_stats=False, display=False, params=params,
                     initial_solution=Solution(d2, routes0))
         stats["iterations"] = int(res.num_iterations)
         pr.offer(res.best)
     pr.flush(True)
+    stats["distance_seconds"] = round(time.monotonic() - t_dist, 1)
+    if mode == "work":
+        stats["distance_iterations"] = dstop.used
+        stats["clock_stop"] = "fleet" if fstop.clock_stop else ("distance" if dstop.clock_stop else False)
+        stats["term_stop"] = bool(fstop.term_stop or dstop.term_stop)
+        stats["deterministic"] = not (stats["clock_stop"] or stats["term_stop"] or b["timed_out"])
+    else:
+        stats["deterministic"] = False
     stats.update({"printed": pr.prints, "vehicles": None if pr.key is None else pr.key[0],
                   "cost": None if pr.key is None else pr.key[1], "sigterm": TERM["flag"],
                   "elapsed": round(time.monotonic() - START, 2)})
@@ -340,15 +448,16 @@ def main(argv):
         return 2
     try:
         limit, seed = float(argv[2]), int(argv[3])
-    except ValueError:
-        sys.stderr.write("solver: SECONDS must be a number and SEED an integer\n")
+        mode = mode_from_env()
+    except ValueError as e:
+        sys.stderr.write("solver: SECONDS must be a number, SEED an integer and XLTW_MODE work or clock (%s)\n" % e)
         return 2
     if not limit > 0:
         sys.stderr.write("solver: SECONDS must be positive\n")
         return 2
     signal.signal(signal.SIGTERM, _on_term)
     out = claim_stdout()
-    run(argv[1], limit, seed, out=out)
+    run(argv[1], limit, seed, out=out, mode=mode)
     out.flush()
     return 0
 
